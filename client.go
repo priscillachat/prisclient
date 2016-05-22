@@ -16,7 +16,7 @@ type Client struct {
 	decoder  *json.Decoder
 	encoder  *json.Encoder
 	SourceId string
-	Logger   *prislog.PrisLogger
+	Logger   *prislog.PrisLog
 }
 
 type CommandBlock struct {
