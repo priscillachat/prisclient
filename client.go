@@ -30,10 +30,12 @@ type CommandBlock struct {
 }
 
 type MessageBlock struct {
-	Message   string `json:"message,omitempty"`
-	From      string `json:"from,omitempty"`
-	Room      string `json:"room,omitempty"`
-	Mentioned bool   `json:"mentioned,omitempty"`
+	Message       string   `json:"message,omitempty"`
+	From          string   `json:"from,omitempty"`
+	Room          string   `json:"room,omitempty"`
+	Mentioned     bool     `json:"mentioned,omitempty"`
+	Stripped      string   `json:"stripped,omitempty"`
+	MentionNotify []string `json:"mentionnotify,omitempty"`
 }
 
 type Query struct {
