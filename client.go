@@ -16,6 +16,7 @@ type Client struct {
 	decoder  *json.Decoder
 	encoder  *json.Encoder
 	SourceId string
+	Type     string
 	Logger   *prislog.PrisLog
 }
 
@@ -52,12 +53,18 @@ func RandomId() string {
 	return fmt.Sprintf("%x", b)
 }
 
-func NewClient(host, port string,
+func NewClient(host, port, clientType, sourceid string,
 	logger *prislog.PrisLog) (*Client, error) {
+
+	if clientType != "adapter" && clientType != "responder" {
+		return nil, errors.New("client type has to be adapter or responder")
+	}
 
 	pris := new(Client)
 
 	pris.Logger = logger
+	pris.SourceId = sourceid
+	pris.Type = clientType
 
 	conn, err := net.Dial("tcp", host+":"+port)
 
@@ -72,23 +79,17 @@ func NewClient(host, port string,
 	return pris, nil
 }
 
-func (pris *Client) Engage(clienttype, sourceid string) error {
-	if clienttype != "adapter" && clienttype != "responder" {
-		return errors.New("client type has to be adapter or responder")
-	}
-
+func (pris *Client) Engage() error {
 	q := Query{
 		Type:   "command",
-		Source: sourceid,
+		Source: pris.SourceId,
 		Command: &CommandBlock{
 			Id:     RandomId(),
 			Action: "engage",
-			Type:   clienttype,
+			Type:   pris.Type,
 			Time:   time.Now().Unix(),
 		},
 	}
-
-	pris.SourceId = sourceid
 
 	return pris.encoder.Encode(&q)
 }
