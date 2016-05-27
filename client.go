@@ -12,12 +12,15 @@ import (
 )
 
 type Client struct {
-	raw      net.Conn
-	decoder  *json.Decoder
-	encoder  *json.Encoder
-	SourceId string
-	Type     string
-	Logger   *prislog.PrisLog
+	raw        net.Conn
+	decoder    *json.Decoder
+	encoder    *json.Encoder
+	SourceId   string
+	clientType string
+	logger     *prislog.PrisLog
+	autoRetry  bool
+	host       string
+	port       string
 }
 
 type CommandBlock struct {
@@ -53,7 +56,7 @@ func RandomId() string {
 	return fmt.Sprintf("%x", b)
 }
 
-func NewClient(host, port, clientType, sourceid string,
+func NewClient(host, port, clientType, sourceid string, autoretry bool,
 	logger *prislog.PrisLog) (*Client, error) {
 
 	if clientType != "adapter" && clientType != "responder" {
@@ -62,21 +65,39 @@ func NewClient(host, port, clientType, sourceid string,
 
 	pris := new(Client)
 
-	pris.Logger = logger
+	pris.logger = logger
 	pris.SourceId = sourceid
-	pris.Type = clientType
+	pris.clientType = clientType
+	pris.autoRetry = autoretry
+	pris.host = host
+	pris.port = port
 
-	conn, err := net.Dial("tcp", host+":"+port)
+	pris.connect()
+
+	return pris, nil
+}
+
+func (pris *Client) connect() error {
+	conn, err := net.Dial("tcp", pris.host+":"+pris.port)
 
 	if err != nil {
-		return pris, err
+		return err
 	}
 
 	pris.raw = conn
 	pris.decoder = json.NewDecoder(pris.raw)
 	pris.encoder = json.NewEncoder(pris.raw)
 
-	return pris, nil
+	err = pris.Engage()
+
+	if err != nil {
+		pris.logger.Error.Println("Failed to engage:", err)
+		return err
+	}
+
+	pris.logger.Info.Println("Priscilla engaged")
+
+	return nil
 }
 
 func (pris *Client) Engage() error {
@@ -86,7 +107,7 @@ func (pris *Client) Engage() error {
 		Command: &CommandBlock{
 			Id:     RandomId(),
 			Action: "engage",
-			Type:   pris.Type,
+			Type:   pris.clientType,
 			Time:   time.Now().Unix(),
 		},
 	}
@@ -103,27 +124,37 @@ func (pris *Client) listen(out chan<- *Query) {
 		if err != nil {
 			fmt.Println(err)
 			if err.Error() == "EOF" {
-				out <- &Query{
-					Type:   "command",
-					Source: "pris",
-					Command: &CommandBlock{
-						Action: "disengage",
-					},
+				pris.logger.Error.Println("Priscilla disconnected")
+				if pris.autoRetry {
+					pris.logger.Error.Println("Auto reconnect in 5 seconds...")
+					time.Sleep(5 * time.Second)
+					err := pris.connect()
+					if err != nil {
+						pris.logger.Error.Println("Connect error:", err)
+					}
+				} else {
+					out <- &Query{
+						Type:   "command",
+						Source: "pris",
+						Command: &CommandBlock{
+							Action: "disengage",
+						},
+					}
+					break
 				}
-				break
 			}
 		}
 
 		if pris.ValidateQuery(q) {
-			pris.Logger.Debug.Println("Query received:", *q)
+			pris.logger.Debug.Println("Query received:", *q)
 			if q.Type == "message" {
-				pris.Logger.Debug.Println("Message:", q.Message.Message)
-				pris.Logger.Debug.Println("From:", q.Message.From)
-				pris.Logger.Debug.Println("Room:", q.Message.Room)
+				pris.logger.Debug.Println("Message:", q.Message.Message)
+				pris.logger.Debug.Println("From:", q.Message.From)
+				pris.logger.Debug.Println("Room:", q.Message.Room)
 			}
 			out <- q
 		} else {
-			pris.Logger.Error.Println("Invalid query from server(?!!):", q)
+			pris.logger.Error.Println("Invalid query from server(?!!):", q)
 		}
 	}
 }
@@ -137,7 +168,7 @@ func (pris *Client) Run(toPris <-chan *Query, fromPris chan<- *Query) {
 		if pris.ValidateQuery(q) {
 			pris.encoder.Encode(q)
 		} else {
-			pris.Logger.Error.Println("Invalid query:", q)
+			pris.logger.Error.Println("Invalid query:", q)
 		}
 	}
 }
