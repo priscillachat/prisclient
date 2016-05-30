@@ -72,8 +72,6 @@ func NewClient(host, port, clientType, sourceid string, autoretry bool,
 	pris.host = host
 	pris.port = port
 
-	pris.connect()
-
 	return pris, nil
 }
 
@@ -88,7 +86,7 @@ func (pris *Client) connect() error {
 	pris.decoder = json.NewDecoder(pris.raw)
 	pris.encoder = json.NewEncoder(pris.raw)
 
-	err = pris.Engage()
+	err = pris.engage()
 
 	if err != nil {
 		pris.logger.Error.Println("Failed to engage:", err)
@@ -100,7 +98,7 @@ func (pris *Client) connect() error {
 	return nil
 }
 
-func (pris *Client) Engage() error {
+func (pris *Client) engage() error {
 	q := Query{
 		Type:   "command",
 		Source: pris.SourceId,
@@ -115,7 +113,30 @@ func (pris *Client) Engage() error {
 	return pris.encoder.Encode(&q)
 }
 
+func (pris *Client) disconnect() {
+	if pris.raw != nil {
+		pris.raw.(*net.TCPConn).Close()
+	}
+}
+
 func (pris *Client) listen(out chan<- *Query) {
+	for err := pris.connect(); err != nil; err = pris.connect() {
+		if err == nil {
+			break
+		}
+
+		pris.logger.Error.Println("Error connecting to priscilla server")
+
+		if pris.autoRetry {
+			pris.disconnect()
+			pris.logger.Error.Println("Auto retry in 5 seconds...")
+			time.Sleep(5 * time.Second)
+		} else {
+			pris.logger.Error.Fatal(
+				"Error connecting to priscilla server, and autoRetry is not set")
+		}
+	}
+
 	var q *Query
 	for {
 		q = new(Query)
@@ -125,24 +146,29 @@ func (pris *Client) listen(out chan<- *Query) {
 			fmt.Println(err)
 			if err.Error() == "EOF" {
 				pris.logger.Error.Println("Priscilla disconnected")
-				if pris.autoRetry {
-					pris.logger.Error.Println("Auto reconnect in 5 seconds...")
-					time.Sleep(5 * time.Second)
-					err := pris.connect()
-					if err != nil {
-						pris.logger.Error.Println("Connect error:", err)
-					}
-				} else {
-					out <- &Query{
-						Type:   "command",
-						Source: "pris",
-						Command: &CommandBlock{
-							Action: "disengage",
-						},
-					}
-					break
-				}
+			} else {
+				pris.logger.Error.Println("Priscilla connection error:", err)
+				pris.disconnect()
 			}
+
+			if pris.autoRetry {
+				pris.logger.Error.Println("Auto reconnect in 5 seconds...")
+				time.Sleep(5 * time.Second)
+				err := pris.connect()
+				if err != nil {
+					pris.logger.Error.Println("Connect error:", err)
+				}
+			} else {
+				out <- &Query{
+					Type:   "command",
+					Source: "pris",
+					Command: &CommandBlock{
+						Action: "disengage",
+					},
+				}
+				break
+			}
+			// }
 		}
 
 		if pris.ValidateQuery(q) {
@@ -166,7 +192,9 @@ func (pris *Client) Run(toPris <-chan *Query, fromPris chan<- *Query) {
 	for {
 		q = <-toPris
 		if pris.ValidateQuery(q) {
-			pris.encoder.Encode(q)
+			if pris.raw != nil {
+				pris.encoder.Encode(q)
+			}
 		} else {
 			pris.logger.Error.Println("Invalid query:", q)
 		}
