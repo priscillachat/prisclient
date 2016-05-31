@@ -82,11 +82,44 @@ func (pris *Client) connect() error {
 		return err
 	}
 
-	pris.raw = conn
-	pris.decoder = json.NewDecoder(pris.raw)
-	pris.encoder = json.NewEncoder(pris.raw)
+	// we can't assign it to pris until the engagement is complete, because as
+	// soon as the encoder/decoder is assigned, communication starts
+	decoder := json.NewDecoder(conn)
+	encoder := json.NewEncoder(conn)
 
-	err = pris.engage()
+	err = encoder.Encode(&Query{
+		Type:   "command",
+		Source: pris.SourceId,
+		To:     "server",
+		Command: &CommandBlock{
+			Id:     RandomId(),
+			Action: "engage",
+			Type:   pris.clientType,
+			Time:   time.Now().Unix(),
+		},
+	})
+
+	if err != nil {
+		return err
+	}
+
+	ack := Query{}
+
+	err = decoder.Decode(&ack)
+
+	if err != nil {
+		return err
+	}
+
+	if ack.Type != "command" || ack.Command.Action != "proceed" {
+		pris.logger.Error.Println("Unexpected response from server:",
+			ack.Command)
+		return errors.New("Unexpected response from server")
+	}
+
+	pris.encoder = encoder
+	pris.decoder = decoder
+	pris.raw = conn
 
 	if err != nil {
 		pris.logger.Error.Println("Failed to engage:", err)
@@ -96,21 +129,6 @@ func (pris *Client) connect() error {
 	pris.logger.Info.Println("Priscilla engaged")
 
 	return nil
-}
-
-func (pris *Client) engage() error {
-	q := Query{
-		Type:   "command",
-		Source: pris.SourceId,
-		Command: &CommandBlock{
-			Id:     RandomId(),
-			Action: "engage",
-			Type:   pris.clientType,
-			Time:   time.Now().Unix(),
-		},
-	}
-
-	return pris.encoder.Encode(&q)
 }
 
 func (pris *Client) disconnect() {
@@ -192,7 +210,7 @@ func (pris *Client) Run(toPris <-chan *Query, fromPris chan<- *Query) {
 	for {
 		q = <-toPris
 		if pris.ValidateQuery(q) {
-			if pris.raw != nil {
+			if pris.encoder != nil {
 				pris.encoder.Encode(q)
 			}
 		} else {
