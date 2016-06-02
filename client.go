@@ -1,7 +1,10 @@
 package prisclient
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,12 +18,13 @@ type Client struct {
 	raw        net.Conn
 	decoder    *json.Decoder
 	encoder    *json.Encoder
-	SourceId   string
+	sourceId   string
 	clientType string
 	logger     *prislog.PrisLog
 	autoRetry  bool
 	host       string
 	port       string
+	secret     string
 }
 
 type CommandBlock struct {
@@ -56,7 +60,7 @@ func RandomId() string {
 	return fmt.Sprintf("%x", b)
 }
 
-func NewClient(host, port, clientType, sourceid string, autoretry bool,
+func NewClient(host, port, clientType, sourceId, secret string, autoretry bool,
 	logger *prislog.PrisLog) (*Client, error) {
 
 	if clientType != "adapter" && clientType != "responder" {
@@ -66,11 +70,12 @@ func NewClient(host, port, clientType, sourceid string, autoretry bool,
 	pris := new(Client)
 
 	pris.logger = logger
-	pris.SourceId = sourceid
+	pris.sourceId = sourceId
 	pris.clientType = clientType
 	pris.autoRetry = autoretry
 	pris.host = host
 	pris.port = port
+	pris.secret = secret
 
 	return pris, nil
 }
@@ -87,15 +92,22 @@ func (pris *Client) connect() error {
 	decoder := json.NewDecoder(conn)
 	encoder := json.NewEncoder(conn)
 
+	timestamp := time.Now().Unix()
+	authMsg := fmt.Sprintf("%d%s%s", timestamp, pris.sourceId, pris.secret)
+
+	mac := hmac.New(sha256.New, []byte(pris.secret))
+	mac.Write([]byte(authMsg))
+
 	err = encoder.Encode(&Query{
 		Type:   "command",
-		Source: pris.SourceId,
+		Source: pris.sourceId,
 		To:     "server",
 		Command: &CommandBlock{
 			Id:     RandomId(),
 			Action: "engage",
 			Type:   pris.clientType,
-			Time:   time.Now().Unix(),
+			Time:   timestamp,
+			Data:   base64.StdEncoding.EncodeToString(mac.Sum(nil)),
 		},
 	})
 
@@ -112,10 +124,12 @@ func (pris *Client) connect() error {
 	}
 
 	if ack.Type != "command" || ack.Command.Action != "proceed" {
-		pris.logger.Error.Println("Unexpected response from server:",
+		pris.logger.Error.Fatal("Unexpected response from server:",
 			ack.Command)
 		return errors.New("Unexpected response from server")
 	}
+
+	pris.sourceId = ack.Command.Data
 
 	pris.encoder = encoder
 	pris.decoder = decoder
