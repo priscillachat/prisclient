@@ -28,13 +28,14 @@ type Client struct {
 }
 
 type CommandBlock struct {
-	Id      string   `json:"id,omitempty"`
-	Action  string   `json:"action,omitempty"`
-	Type    string   `json:"type,omitempty"`
-	Time    int64    `json:"time,omitempty"`
-	Data    string   `json:"data,omitempty"`
-	Array   []string `json:"array,omitempty"`
-	Options []string `json:"options,omitempty"`
+	Id      string            `json:"id,omitempty"`
+	Action  string            `json:"action,omitempty"`
+	Type    string            `json:"type,omitempty"`
+	Time    int64             `json:"time,omitempty"`
+	Data    string            `json:"data,omitempty"`
+	Array   []string          `json:"array,omitempty"`
+	Options []string          `json:"options,omitempty"`
+	Map     map[string]string `json:"map,omitempty"`
 }
 
 type MessageBlock struct {
@@ -52,6 +53,15 @@ type Query struct {
 	To      string        `json:"to,omitempty"`
 	Command *CommandBlock `json:"command,omitempty"`
 	Message *MessageBlock `json:"message,omitempty"`
+}
+
+type ResponderCommand struct {
+	Name        string
+	Type        string
+	Regex       string
+	Help        string
+	HelpCmd     string
+	Fallthrough bool
 }
 
 func RandomId() string {
@@ -103,7 +113,6 @@ func (pris *Client) connect() error {
 		Source: pris.sourceId,
 		To:     "server",
 		Command: &CommandBlock{
-			Id:     RandomId(),
 			Action: "engage",
 			Type:   pris.clientType,
 			Time:   timestamp,
