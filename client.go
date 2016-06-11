@@ -39,12 +39,13 @@ type CommandBlock struct {
 }
 
 type MessageBlock struct {
-	Message       string   `json:"message,omitempty"`
-	From          string   `json:"from,omitempty"`
-	Room          string   `json:"room,omitempty"`
-	Mentioned     bool     `json:"mentioned,omitempty"`
-	Stripped      string   `json:"stripped,omitempty"`
-	MentionNotify []string `json:"mentionnotify,omitempty"`
+	Message       string    `json:"message,omitempty"`
+	From          string    `json:"from,omitempty"`
+	Room          string    `json:"room,omitempty"`
+	Mentioned     bool      `json:"mentioned,omitempty"`
+	Stripped      string    `json:"stripped,omitempty"`
+	MentionNotify []string  `json:"mentionnotify,omitempty"`
+	User          *UserInfo `json:"user,omitempty"`
 }
 
 type Query struct {
@@ -53,6 +54,13 @@ type Query struct {
 	To      string        `json:"to,omitempty"`
 	Command *CommandBlock `json:"command,omitempty"`
 	Message *MessageBlock `json:"message,omitempty"`
+}
+
+type UserInfo struct {
+	Id      string `json:"id,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Mention string `string:"mention,omitempty"`
+	Email   string `string:"email,omitempty"`
 }
 
 type ResponderCommand struct {
@@ -244,8 +252,51 @@ func (pris *Client) Run(toPris <-chan *Query, fromPris chan<- *Query) {
 
 func (pris *Client) ValidateQuery(q *Query) bool {
 	switch {
-	case q.Type == "command" && q.Command != nil:
-		return true
+	case q.Type == "command":
+		if q.Command == nil {
+			return false
+		}
+		cmd := q.Command
+
+		if cmd.Id == "" {
+			pris.logger.Warn.Println("Missing user request id, assigning ...")
+			cmd.Id = RandomId()
+		}
+
+		switch cmd.Action {
+		case "user_request":
+			if cmd.Type != "user" && cmd.Type != "mention" &&
+				cmd.Type != "email" && cmd.Type != "id" {
+				pris.logger.Error.Println("Invalid user action type:", cmd.Type)
+				return false
+			}
+			if cmd.Data == "" {
+				pris.logger.Error.Println("Missing data field")
+				return false
+			}
+			return true
+		case "room_request":
+			if cmd.Type != "name" && cmd.Type != "id" {
+				pris.logger.Error.Println("Invalid room action type:", cmd.Type)
+				return false
+			}
+			if cmd.Data == "" {
+				pris.logger.Error.Println("Missing data field")
+				return false
+			}
+			return true
+		case "info":
+			if cmd.Type != "user" && cmd.Type != "room" {
+				pris.logger.Error.Println("Invalid info action type:", cmd.Type)
+				return false
+			}
+			return true
+		case "disengage":
+			return true
+		}
+		pris.logger.Error.Println("Unsupported command:", cmd.Action)
+		pris.logger.Info.Println("Client type:", pris.clientType)
+		return false
 	case q.Type == "message" && q.Message != nil && q.Message.Room != "":
 		return true
 	}
