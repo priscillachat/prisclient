@@ -111,7 +111,7 @@ func (pris *Client) connect() error {
 	decoder := json.NewDecoder(conn)
 	encoder := json.NewEncoder(conn)
 
-	timestamp := time.Now().Unix()
+	timestamp := time.Now().UTC().Unix()
 	authMsg := fmt.Sprintf("%d%s%s", timestamp, pris.sourceId, pris.secret)
 
 	mac := hmac.New(sha256.New, []byte(pris.secret))
