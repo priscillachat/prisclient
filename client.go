@@ -47,6 +47,7 @@ type MessageBlock struct {
 	Stripped      string    `json:"stripped,omitempty"`
 	MentionNotify []string  `json:"mentionnotify,omitempty"`
 	User          *UserInfo `json:"user,omitempty"`
+	DisplayName   string    `json:"username,omitempty"`
 }
 
 type Query struct {
