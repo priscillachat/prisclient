@@ -8,10 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/priscillachat/prislog"
 	"io"
 	"net"
 	"time"
+
+	"github.com/priscillachat/prislog"
 )
 
 type Client struct {
@@ -47,7 +48,7 @@ type MessageBlock struct {
 	Stripped      string    `json:"stripped,omitempty"`
 	MentionNotify []string  `json:"mentionnotify,omitempty"`
 	User          *UserInfo `json:"user,omitempty"`
-	DisplayName   string    `json:"username,omitempty"`
+	DisplayName   string    `json:"displayname,omitempty"`
 }
 
 type Query struct {
